@@ -4,8 +4,9 @@ from zeep import Client
 import logging, logging.handlers, os, sys
 
 # V0.1: first version
+# V0.2: bugfix: stamboeknummer is unique per instelling
 
-version = "0.1"
+version = "0.2"
 
 stamnummer_cache = {}
 
@@ -31,7 +32,7 @@ def get_leerlinggegevens_from_sdh():
     response = requests.get(config["default"]["SDH_API_URL"], headers={"x-api-key": config["default"]["SDH_API_KEY"]})
     response_json = response.json()
     if response_json["status"]:
-        stamnummer_cache = {int(leerling["stamboeknummer"]): {"instellingsnummer": int(leerling["instellingsnummer"]),
+        stamnummer_cache = {leerling["instellingsnummer"]+leerling["stamboeknummer"]: {"instellingsnummer": int(leerling["instellingsnummer"]),
                                                               "leerlingnummer": int(leerling["leerlingnummer"]),
                                                               "klascode": leerling["klascode"]} for leerling in response_json["data"]}
         print("--> SDH: gegevens zijn ok")
@@ -49,14 +50,14 @@ def create_class_list():
         return False
     try:
         leerid_naam = input("--> LeerID invoer bestand: ")
-        instellingsnummer = int(input("--> Instellingsnummer: "))
+        instellingsnummer = input("--> Instellingsnummer: ")
         df = pd.read_excel(leerid_naam)
         for i, row in df.iterrows():
             stamnummer = row["Stamnummer"]
             admingroep = row["Administratieve groep"]
-            if stamnummer in stamnummer_cache and instellingsnummer == stamnummer_cache[stamnummer]["instellingsnummer"]:
-                klascode = stamnummer_cache[stamnummer]["klascode"]
-
+            key = instellingsnummer + str(stamnummer)
+            if key in stamnummer_cache:
+                klascode = stamnummer_cache[key]["klascode"]
                 if admingroep not in admingroep_cache:
                     admingroep_cache[admingroep] = set()
                 admingroep_cache[admingroep].add(klascode)
@@ -86,8 +87,9 @@ def send_leerid_to_students():
     new_klaslijst = []
     now = datetime.datetime.now().strftime('%Y-%m-%d-%H:%M:%S')
     try:
-        leerid_naam = input("-> Leerid invoer bestand: ")
-        klaslijst_naam = input("-> Klassenlijst: ")
+        leerid_naam = input("--> Leerid invoer bestand: ")
+        klaslijst_naam = input("--> Klassenlijst: ")
+        instellingsnummer = input("--> Instellingsnummer: ")
         with open(klaslijst_naam, "r") as klaslijst_file:
             for line in klaslijst_file:
                 line = line.strip("\n")
@@ -106,7 +108,7 @@ def send_leerid_to_students():
         for i, row in df.iterrows():
             admingroep = row["Administratieve groep"]
             if admingroep in admingroup_lijst:
-                send_to = ss_send_to if dryrun else stamnummer_cache[row["Stamnummer"]]["leerlingnummer"]
+                send_to = ss_send_to if dryrun else stamnummer_cache[instellingsnummer + str(row["Stamnummer"])]["leerlingnummer"]
                 body = body_html.replace("%%FIRSTNAME%%", row["Voornaam"])
                 body = body.replace("%%USERNAME%%", row["LeerID Gebruikersnaam"])
                 body = body.replace("%%PASSWORD%%", row["LeerID Wachtwoord"])
